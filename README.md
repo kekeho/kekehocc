@@ -1,6 +1,6 @@
 # kekehocc
 
-Simple C Compiler
+Simple C Compiler written in Rust
 
 ## Reference
 

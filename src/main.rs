@@ -119,7 +119,8 @@ const SYMBOLS: [char; 6] = ['+', '-', '*', '/', '(', ')'];
 
 // Syntax
 // expr    = mul ("+" mul | "-" mul)*
-// mul     = primary ("*" primary | "/" primary)*
+// mul     = unary ("*" unary | "/" unary)*
+// unary   = ("+" | "-")? primary
 // primary = num | "(" expr ")"
 
 
@@ -156,27 +157,48 @@ fn expr(tokens: &mut VecDeque<Token>) -> Rc<Node> {
 
 
 fn mul(tokens: &mut VecDeque<Token>) -> Rc<Node> {
-    let mut node: Rc<Node> = primary(tokens);
+    let mut node: Rc<Node> = unary(tokens);
 
     loop {
         loop {
             if consume(tokens, "*") {
                 node = Rc::new(Node {
                     kind: NodeKind::Mul,
-                    lhs: Some(node.clone()),
-                    rhs: Some(primary(tokens)),
+                    lhs: Some(node),
+                    rhs: Some(unary(tokens)),
                 })
             } else if consume(tokens, "/") {
                 node = Rc::new(Node {
                     kind: NodeKind::Div,
-                    lhs: Some(node.clone()),
-                    rhs: Some(primary(tokens)),
+                    lhs: Some(node),
+                    rhs: Some(unary(tokens)),
                 })
             } else {
                 return node;
             }
         }
     }
+}
+
+
+fn unary(tokens: &mut VecDeque<Token>) -> Rc<Node> {
+    if consume(tokens, "+") {
+        return primary(tokens);
+    }
+
+    if consume(tokens, "-") {
+        return Rc::new(Node {
+            kind: NodeKind::Sub,
+            lhs: Some(Rc::new(Node {
+                kind: NodeKind::Num { value: 0 },
+                lhs: None,
+                rhs: None,
+            })),
+            rhs: Some(primary(tokens)),
+        });
+    }
+
+    return primary(tokens);
 }
 
 

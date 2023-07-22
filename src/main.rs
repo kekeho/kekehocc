@@ -35,6 +35,10 @@ enum NodeKind {
     Sub,
     Mul,
     Div,
+    Eq,
+    Neq,
+    Lt,
+    Lte,
     Num {value: i64},
 }
 
@@ -63,6 +67,7 @@ impl Node {
         println!("\tpop rdi");
         println!("\tpop rax");
 
+        // Add/Sub/Mul/Div/Cmp
         match n.kind {
             NodeKind::Add => {
                 println!("\tadd rax, rdi");
@@ -79,6 +84,30 @@ impl Node {
             NodeKind::Div => {
                 println!("\tcqo");
                 println!("\tidiv rdi");
+            }
+
+            NodeKind::Eq => {
+                println!("\tcmp rax, rdi");
+                println!("\tsete al");
+                println!("\tmovzb rax, al");
+            }
+
+            NodeKind::Neq => {
+                println!("\tcmp rax, rdi");
+                println!("\tsetne al");
+                println!("\tmovzb rax, al");
+            }
+
+            NodeKind::Lt => {
+                println!("\tcmp rax, rdi");
+                println!("\tsetl al");
+                println!("\tmovzb rax, al");
+            }
+
+            NodeKind::Lte => {
+                println!("\tcmp rax, rdi");
+                println!("\tsetle al");
+                println!("\tmovzb rax, al");
             }
 
             _ => {}
@@ -129,18 +158,27 @@ fn is_digit(chars: &mut VecDeque<char>) -> Result<i64, std::num::ParseIntError> 
 
 
 fn load_symbol(chars: &mut VecDeque<char>, symbols: &Vec<String>) -> Result<String, LoadError> {
-    const MAX_SYMBOL_LEN: usize = 1;
-    for i in 1..min(MAX_SYMBOL_LEN, chars.len())+1 {
-        let check: String = chars.range(0..i).collect();
+    // longest match
+    const MAX_SYMBOL_LEN: usize = 2;
+    let mut result: Result<String, LoadError> = Err(LoadError{});
+    for i in 0..min(MAX_SYMBOL_LEN, chars.len()) {
+        let check: String = chars.range(0..i+1).collect();
         if symbols.contains(&check) {
-            for _ in 0..i {
-                chars.pop_front();
-            }
-            return Ok(check);
+            result = Ok(check);
         }
     }
 
-    return Err(LoadError{})
+    match &result {
+        Ok(x) => {
+            for _ in 0..x.len() {
+                chars.pop_front();
+            }
+        }
+
+        _ => {}
+    }
+
+    return result;
 }
 
 
@@ -165,10 +203,13 @@ fn skip_ignore(chars: &mut VecDeque<char>, ignore: &Vec<String>) {
 
 
 // Syntax
-// expr    = mul ("+" mul | "-" mul)*
-// mul     = unary ("*" unary | "/" unary)*
-// unary   = ("+" | "-")? primary
-// primary = num | "(" expr ")"
+// expr       = equality
+// equality   = relational ("==" relational | "!=" relational)*
+// relational = add ("<" add | "<=" add | ">" add | ">=" add)*
+// add        = mul ("+" mul | "-" mul)*
+// mul        = unary ("*" unary | "/" unary)*
+// unary      = ("+" | "-")? primary
+// primary    = num | "(" expr ")"
 
 
 fn consume(tokens: &mut VecDeque<Token>, s: &str) -> bool {
@@ -182,7 +223,73 @@ fn consume(tokens: &mut VecDeque<Token>, s: &str) -> bool {
 
 
 fn expr(tokens: &mut VecDeque<Token>) -> Rc<Node> {
+    return equality(tokens);
+}
+
+
+fn equality(tokens: &mut VecDeque<Token>) -> Rc<Node> {
+    let mut node: Rc<Node> = relational(tokens);
+
+    loop {
+        if consume(tokens, "==") {
+            node = Rc::new(Node {
+                kind: NodeKind::Eq,
+                lhs: Some(node),
+                rhs: Some(relational(tokens)),
+            })
+        } else if consume(tokens, "!=") {
+            node = Rc::new(Node {
+                kind: NodeKind::Neq,
+                lhs: Some(node),
+                rhs: Some(relational(tokens)),
+            })
+        } else {
+            return node;
+        }
+    }
+}
+
+
+fn relational(tokens: &mut VecDeque<Token>) -> Rc<Node> {
+    let mut node: Rc<Node> = add(tokens);
+
+    loop {
+        if consume(tokens, "<") {
+            node = Rc::new(Node {
+                kind: NodeKind::Lt,
+                lhs: Some(node),
+                rhs: Some(add(tokens)),
+            })
+        } else if consume(tokens, "<=") {
+            node = Rc::new(Node {
+                kind: NodeKind::Lte,
+                lhs: Some(node),
+                rhs: Some(add(tokens)),
+            })
+        } else if consume(tokens, ">") {
+            // Gt: swap lhs and rhs to make it Lt
+            node = Rc::new(Node {
+                kind: NodeKind::Lt,
+                lhs: Some(add(tokens)),
+                rhs: Some(node),
+            })
+        } else if consume(tokens, ">=") {
+            // Gte: swap lhs and rhs to make it Lte
+            node = Rc::new(Node {
+                kind: NodeKind::Lte,
+                lhs: Some(add(tokens)),
+                rhs: Some(node),
+            })
+        } else {
+            return node;
+        }
+    }
+}
+
+
+fn add(tokens: &mut VecDeque<Token>) -> Rc<Node> {
     let mut node: Rc<Node> = mul(tokens);
+    
     loop {
         if consume(tokens, "+") {
             node = Rc::new(Node {
@@ -289,7 +396,7 @@ fn tokenize(s: &String, symbols: &Vec<String>, ignore: &Vec<String>) -> VecDeque
             break;
         }
 
-        println!("{:?}", codes);
+        println!("{:?}, {:?}", codes, tokens);
         panic!("Failed to tokenize!");
     }
 
@@ -305,7 +412,10 @@ fn main() {
     }
 
     let ignore: Vec<String> = [" ", "\t"].iter().map(|x| x.to_string()).collect();
-    let symbols: Vec<String> = ["+", "-", "*", "/", "(", ")"].iter().map(|x| x.to_string()).collect();
+    let symbols: Vec<String> = [
+        "+", "-", "*", "/", "(", ")",
+        "==", "!=", "<", "<=", ">", ">=",
+    ].iter().map(|x| x.to_string()).collect();
 
     let mut tokens: VecDeque<Token> = tokenize(&argv[1], &symbols, &ignore);
 

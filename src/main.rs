@@ -1,5 +1,6 @@
 use std::env;
 use std::rc::Rc;
+use std::cmp::min;
 use std::collections::VecDeque;
 
 
@@ -89,18 +90,29 @@ impl Node {
 
 
 
-fn is_digit(chars: &[char]) -> (Result<i64, std::num::ParseIntError>, usize) {
+struct LoadError;
+
+
+
+fn is_digit(chars: &mut VecDeque<char>) -> Result<i64, std::num::ParseIntError> {
+    if chars.len() == 0 {
+        return "".parse();
+    }
+
     let mut i: usize = 0;
-    let s: String = chars[0..i+1].into_iter().collect();
+    let s: String = chars.range(0..i+1).collect();
     let mut prev_result: Result<i64, std::num::ParseIntError> = s.parse();
 
     while i+1 <= chars.len() {
-        let s: String = chars[0..i+1].into_iter().collect();
+        let s: String = chars.range(0..i+1).collect();
         let r: Result<i64, std::num::ParseIntError> = s.parse();
 
         match r {
             Err(_) => {
-                return (prev_result, i);
+                for _ in 0..i {
+                    chars.pop_front();
+                }
+                return prev_result;
             }
             Ok(_) => {
                 prev_result = r;
@@ -109,12 +121,47 @@ fn is_digit(chars: &[char]) -> (Result<i64, std::num::ParseIntError>, usize) {
         }
     }
 
-    return (prev_result, i);
+    for _ in 0..i {
+        chars.pop_front();
+    }
+    return prev_result;
 }
 
 
-const IGNORE: [char; 2] = [' ', '\t',];
-const SYMBOLS: [char; 6] = ['+', '-', '*', '/', '(', ')'];
+fn load_symbol(chars: &mut VecDeque<char>, symbols: &Vec<String>) -> Result<String, LoadError> {
+    const MAX_SYMBOL_LEN: usize = 1;
+    for i in 1..min(MAX_SYMBOL_LEN, chars.len())+1 {
+        let check: String = chars.range(0..i).collect();
+        if symbols.contains(&check) {
+            for _ in 0..i {
+                chars.pop_front();
+            }
+            return Ok(check);
+        }
+    }
+
+    return Err(LoadError{})
+}
+
+
+fn skip_ignore(chars: &mut VecDeque<char>, ignore: &Vec<String>) {
+    if chars.len() == 0 {
+        return;
+    }
+
+    for i in 0..chars.len() {
+        let check: String = chars.range(0..i+1).collect();
+        if ignore.contains(&check) {
+            for _ in 0..i+1 {
+                chars.pop_front();
+            }
+            return;
+        }
+
+        break;
+    }
+}
+
 
 
 // Syntax
@@ -217,28 +264,33 @@ fn primary(tokens: &mut VecDeque<Token>) -> Rc<Node> {
 }
 
 
-fn tokenize(s: &String) -> VecDeque<Token> {
-    let codes: Vec<char> = s.chars().collect();
-    let mut i: usize = 0;
-
+fn tokenize(s: &String, symbols: &Vec<String>, ignore: &Vec<String>) -> VecDeque<Token> {
+    let mut codes: VecDeque<char> = s.chars().collect();
     let mut tokens: VecDeque<Token> = VecDeque::new();
 
-    while i < codes.len() {
-        if IGNORE.contains(&codes[i]) {
-            i += 1;
-        } else if SYMBOLS.contains(&codes[i]){
+    loop {
+        skip_ignore(&mut codes, ignore);
+
+        if let Ok(t) = load_symbol(&mut codes, symbols) {
             tokens.push_back(
-                Token::new(TokenKind::Reserved, None, codes[i].to_string())
+                Token::new(TokenKind::Reserved, None, t)
             );
-            i += 1;
-        } else if let (Ok(digit), digit_i) = is_digit(&codes[i..]) {
-            tokens.push_back(
-                Token::new(TokenKind::Num, Some(digit), "".to_string())
-            );
-            i += digit_i;
-        } else {
-            panic!("Failed to tokenize!");
+            continue;
         }
+
+        if let Ok(n) = is_digit(&mut codes) {
+            tokens.push_back(
+                Token::new(TokenKind::Num, Some(n), "".to_string())
+            );
+            continue;
+        }
+
+        if codes.len() == 0 {
+            break;
+        }
+
+        println!("{:?}", codes);
+        panic!("Failed to tokenize!");
     }
 
     return tokens;
@@ -252,7 +304,10 @@ fn main() {
         panic!("Number of arguments invalid");
     }
 
-    let mut tokens: VecDeque<Token> = tokenize(&argv[1]);
+    let ignore: Vec<String> = [" ", "\t"].iter().map(|x| x.to_string()).collect();
+    let symbols: Vec<String> = ["+", "-", "*", "/", "(", ")"].iter().map(|x| x.to_string()).collect();
+
+    let mut tokens: VecDeque<Token> = tokenize(&argv[1], &symbols, &ignore);
 
     println!(".intel_syntax noprefix");
     println!(".globl main");

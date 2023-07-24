@@ -37,6 +37,7 @@ fn main() {
     ].iter().map(|x| x.to_string()).collect();
 
     let mut tokens: VecDeque<Token> = tokenize(&argv[1], &symbols, &ignore);
+    let (nodes, local_vars_cnt): (Vec<Rc<Node>>, usize) = gen::program(&mut tokens); 
 
     // Header
     println!(".intel_syntax noprefix");
@@ -47,11 +48,9 @@ fn main() {
     // Prologue
     println!("\tpush rbp");
     println!("\tmov rbp, rsp");
-    println!("\tsub rsp, 208");
+    println!("\tsub rsp, {}", local_vars_cnt*8);
 
-    let node: Vec<Rc<Node>> = gen::program(&mut tokens); 
-
-    for n in node {
+    for n in nodes {
         Node::gen(&n);
         println!("\tpop rax");
     }

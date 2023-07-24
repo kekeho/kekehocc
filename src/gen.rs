@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{VecDeque, HashMap};
 use std::rc::Rc;
 
 
@@ -146,59 +146,61 @@ fn consume_ident(tokens: &mut VecDeque<Token>) -> Option<Token> {
 }
 
 
-pub fn program(tokens: &mut VecDeque<Token>) -> Vec<Rc<Node>> {
+pub fn program(tokens: &mut VecDeque<Token>) -> (Vec<Rc<Node>>, usize) {
+    // Return: Nodes, Local variable count
     let mut nodes: Vec<Rc<Node>> = Vec::new();
+    let mut local_vars: HashMap<String, usize> = HashMap::new();
     loop {
-        let n = stmt(tokens);
+        let n = stmt(tokens, &mut local_vars);
         nodes.push(n);
         
         if tokens.len() == 0 {
             break;
         }
     }
-    return nodes;
+    return (nodes, local_vars.len());
 }
 
 
-fn stmt(tokens: &mut VecDeque<Token>) -> Rc<Node> {
-    let n: Rc<Node> = expr(tokens);
+fn stmt(tokens: &mut VecDeque<Token>, local_vars: &mut HashMap<String, usize>) -> Rc<Node> {
+    let n: Rc<Node> = expr(tokens, local_vars);
     consume(tokens, ";");
     return n;
 }
 
 
-fn expr(tokens: &mut VecDeque<Token>) -> Rc<Node> {
-    return assign(tokens);
+fn expr(tokens: &mut VecDeque<Token>, local_vars: &mut HashMap<String, usize>) -> Rc<Node> {
+    return assign(tokens, local_vars);
 }
 
-fn assign(tokens: &mut VecDeque<Token>) -> Rc<Node> {
-    let n: Rc<Node> = equality(tokens);
+fn assign(tokens: &mut VecDeque<Token>, local_vars: &mut HashMap<String, usize>) -> Rc<Node> {
+    let n: Rc<Node> = equality(tokens, local_vars);
     if consume(tokens, "=") {
         return Rc::new(Node {
             kind: NodeKind::Assign,
             lhs: Some(n),
-            rhs: Some(assign(tokens)),
+            rhs: Some(assign(tokens, local_vars)),
         })
     }
     return n;
 }
 
 
-fn equality(tokens: &mut VecDeque<Token>) -> Rc<Node> {
-    let mut node: Rc<Node> = relational(tokens);
+fn equality(tokens: &mut VecDeque<Token>, local_vars: &mut HashMap<String, usize>) -> Rc<Node> {
+    let mut node: Rc<Node> = relational(tokens, local_vars);
 
     loop {
         if consume(tokens, "==") {
             node = Rc::new(Node {
                 kind: NodeKind::Eq,
                 lhs: Some(node),
-                rhs: Some(relational(tokens)),
+                rhs: Some(relational(tokens, local_vars)),
             })
         } else if consume(tokens, "!=") {
             node = Rc::new(Node {
                 kind: NodeKind::Neq,
                 lhs: Some(node),
-                rhs: Some(relational(tokens)),
+                rhs: Some(relational(tokens, local_vars)),
             })
         } else {
             return node;
@@ -207,34 +209,34 @@ fn equality(tokens: &mut VecDeque<Token>) -> Rc<Node> {
 }
 
 
-fn relational(tokens: &mut VecDeque<Token>) -> Rc<Node> {
-    let mut node: Rc<Node> = add(tokens);
+fn relational(tokens: &mut VecDeque<Token>, local_vars: &mut HashMap<String, usize>) -> Rc<Node> {
+    let mut node: Rc<Node> = add(tokens, local_vars);
 
     loop {
         if consume(tokens, "<") {
             node = Rc::new(Node {
                 kind: NodeKind::Lt,
                 lhs: Some(node),
-                rhs: Some(add(tokens)),
+                rhs: Some(add(tokens, local_vars)),
             })
         } else if consume(tokens, "<=") {
             node = Rc::new(Node {
                 kind: NodeKind::Lte,
                 lhs: Some(node),
-                rhs: Some(add(tokens)),
+                rhs: Some(add(tokens, local_vars)),
             })
         } else if consume(tokens, ">") {
             // Gt: swap lhs and rhs to make it Lt
             node = Rc::new(Node {
                 kind: NodeKind::Lt,
-                lhs: Some(add(tokens)),
+                lhs: Some(add(tokens, local_vars)),
                 rhs: Some(node),
             })
         } else if consume(tokens, ">=") {
             // Gte: swap lhs and rhs to make it Lte
             node = Rc::new(Node {
                 kind: NodeKind::Lte,
-                lhs: Some(add(tokens)),
+                lhs: Some(add(tokens, local_vars)),
                 rhs: Some(node),
             })
         } else {
@@ -244,21 +246,21 @@ fn relational(tokens: &mut VecDeque<Token>) -> Rc<Node> {
 }
 
 
-fn add(tokens: &mut VecDeque<Token>) -> Rc<Node> {
-    let mut node: Rc<Node> = mul(tokens);
+fn add(tokens: &mut VecDeque<Token>, local_vars: &mut HashMap<String, usize>) -> Rc<Node> {
+    let mut node: Rc<Node> = mul(tokens, local_vars);
     
     loop {
         if consume(tokens, "+") {
             node = Rc::new(Node {
                 kind: NodeKind::Add,
                 lhs: Some(node),
-                rhs: Some(mul(tokens)),
+                rhs: Some(mul(tokens, local_vars)),
             })
         } else if consume(tokens, "-") {
             node = Rc::new(Node {
                 kind: NodeKind::Sub,
                 lhs: Some(node),
-                rhs: Some(mul(tokens)),
+                rhs: Some(mul(tokens, local_vars)),
             })
         } else {
             return node;
@@ -267,8 +269,8 @@ fn add(tokens: &mut VecDeque<Token>) -> Rc<Node> {
 }
 
 
-fn mul(tokens: &mut VecDeque<Token>) -> Rc<Node> {
-    let mut node: Rc<Node> = unary(tokens);
+fn mul(tokens: &mut VecDeque<Token>, local_vars: &mut HashMap<String, usize>) -> Rc<Node> {
+    let mut node: Rc<Node> = unary(tokens, local_vars);
 
     loop {
         loop {
@@ -276,13 +278,13 @@ fn mul(tokens: &mut VecDeque<Token>) -> Rc<Node> {
                 node = Rc::new(Node {
                     kind: NodeKind::Mul,
                     lhs: Some(node),
-                    rhs: Some(unary(tokens)),
+                    rhs: Some(unary(tokens, local_vars)),
                 })
             } else if consume(tokens, "/") {
                 node = Rc::new(Node {
                     kind: NodeKind::Div,
                     lhs: Some(node),
-                    rhs: Some(unary(tokens)),
+                    rhs: Some(unary(tokens, local_vars)),
                 })
             } else {
                 return node;
@@ -292,9 +294,9 @@ fn mul(tokens: &mut VecDeque<Token>) -> Rc<Node> {
 }
 
 
-fn unary(tokens: &mut VecDeque<Token>) -> Rc<Node> {
+fn unary(tokens: &mut VecDeque<Token>, local_vars: &mut HashMap<String, usize>) -> Rc<Node> {
     if consume(tokens, "+") {
-        return primary(tokens);
+        return primary(tokens, local_vars);
     }
 
     if consume(tokens, "-") {
@@ -305,23 +307,34 @@ fn unary(tokens: &mut VecDeque<Token>) -> Rc<Node> {
                 lhs: None,
                 rhs: None,
             })),
-            rhs: Some(primary(tokens)),
+            rhs: Some(primary(tokens, local_vars)),
         });
     }
 
-    return primary(tokens);
+    return primary(tokens, local_vars);
 }
 
 
-fn primary(tokens: &mut VecDeque<Token>) -> Rc<Node> {
+fn primary(tokens: &mut VecDeque<Token>, local_vars: &mut HashMap<String, usize>) -> Rc<Node> {
     if consume(tokens, "(") {
-        let node: Rc<Node> = expr(tokens);
+        let node: Rc<Node> = expr(tokens, local_vars);
         consume(tokens, ")");
         return node;
     }
 
     if let Some(t) = consume_ident(tokens) {
-        let offset: usize = (t.string.as_bytes()[0] as usize - 97 + 1) * 8;
+        let offset: usize;
+        match local_vars.get(&t.string) {
+            Some(i) => {
+                offset = *i;
+            }
+
+            None => {
+                offset = (local_vars.len() + 1) * 8;
+                local_vars.insert(t.string, offset);
+            }
+        }
+
         return Rc::new(Node {
             kind: NodeKind::LocalVar { offset: offset },
             lhs: None,

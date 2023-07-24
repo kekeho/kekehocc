@@ -76,13 +76,30 @@ fn is_ident(chars: &mut VecDeque<char>) -> Result<String, LoadError> {
         return Err(LoadError{});
     }
 
-    if chars[0].is_ascii_lowercase() {
-        let c = chars[0];
-        chars.pop_front();
-        return Ok(c.to_string());
+    let mut result: Result<String, LoadError> = Err(LoadError{});
+
+    for i in 0..chars.len() {
+        if chars[i].is_ascii_lowercase() {
+            result = Ok(chars.range(0..i+1).collect());
+            continue;
+        }
+
+        break;
     }
 
-    return Err(LoadError{})
+    match result {
+        Ok(s) => {
+            for _ in 0..s.len() {
+                chars.pop_front();
+            }
+
+            return Ok(s);
+        }
+
+        _ => {
+            return Err(LoadError{});
+        }
+    }
 }
 
 

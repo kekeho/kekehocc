@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 
-use crate::tokenize::Token;
+use crate::tokenize::{Token, TokenKind};
 
 
 #[derive(PartialEq, Debug)]
@@ -15,6 +15,8 @@ pub enum NodeKind {
     Neq,
     Lt,
     Lte,
+    Assign,
+    LocalVar {offset: usize},
     Num {value: i64},
 }
 
@@ -31,6 +33,25 @@ impl Node {
             NodeKind::Num {value: v} => {
                 println!("\tpush {}", v);
                 return
+            }
+
+            NodeKind::LocalVar { offset: _ } => {
+                Self::gen_leftval(&n);
+                println!("\tpop rax");
+                println!("\tmov rax, [rax]");
+                println!("\tpush rax");
+                return;
+            }
+
+            NodeKind::Assign => {
+                Self::gen_leftval(&n.lhs.clone().unwrap());
+                Self::gen(&n.rhs.clone().unwrap());
+
+                println!("\tpop rdi");
+                println!("\tpop rax");
+                println!("\tmov [rax], rdi");
+                println!("\tpush rdi");
+                return;
             }
 
             _ => {}
@@ -90,6 +111,20 @@ impl Node {
 
         println!("\tpush rax");
     }
+
+    fn gen_leftval(n: &Rc<Node>) {
+        match n.kind {
+            NodeKind::LocalVar { offset } => {
+                println!("\tmov rax, rbp");
+                println!("\tsub rax, {}", offset);
+                println!("\tpush rax");
+            }
+
+            _ => {
+                panic!("Left value is not identifier...");
+            }
+        }
+    }
 }
 
 
@@ -102,8 +137,50 @@ fn consume(tokens: &mut VecDeque<Token>, s: &str) -> bool {
 }
 
 
-pub fn expr(tokens: &mut VecDeque<Token>) -> Rc<Node> {
-    return equality(tokens);
+fn consume_ident(tokens: &mut VecDeque<Token>) -> Option<Token> {
+    if tokens.len() > 0 && tokens[0].kind == TokenKind::Ident {
+        return tokens.pop_front();
+    }
+
+    return None;
+}
+
+
+pub fn program(tokens: &mut VecDeque<Token>) -> Vec<Rc<Node>> {
+    let mut nodes: Vec<Rc<Node>> = Vec::new();
+    loop {
+        let n = stmt(tokens);
+        nodes.push(n);
+        
+        if tokens.len() == 0 {
+            break;
+        }
+    }
+    return nodes;
+}
+
+
+fn stmt(tokens: &mut VecDeque<Token>) -> Rc<Node> {
+    let n: Rc<Node> = expr(tokens);
+    consume(tokens, ";");
+    return n;
+}
+
+
+fn expr(tokens: &mut VecDeque<Token>) -> Rc<Node> {
+    return assign(tokens);
+}
+
+fn assign(tokens: &mut VecDeque<Token>) -> Rc<Node> {
+    let n: Rc<Node> = equality(tokens);
+    if consume(tokens, "=") {
+        return Rc::new(Node {
+            kind: NodeKind::Assign,
+            lhs: Some(n),
+            rhs: Some(assign(tokens)),
+        })
+    }
+    return n;
 }
 
 
@@ -241,6 +318,15 @@ fn primary(tokens: &mut VecDeque<Token>) -> Rc<Node> {
         let node: Rc<Node> = expr(tokens);
         consume(tokens, ")");
         return node;
+    }
+
+    if let Some(t) = consume_ident(tokens) {
+        let offset: usize = (t.string.as_bytes()[0] as usize - 97 + 1) * 8;
+        return Rc::new(Node {
+            kind: NodeKind::LocalVar { offset: offset },
+            lhs: None,
+            rhs: None,
+        })
     }
 
     return Rc::new(Node {

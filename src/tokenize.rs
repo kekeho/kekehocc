@@ -6,6 +6,7 @@ use std::cmp::min;
 pub enum TokenKind {
     Reserved,  // Symbol
     Num,  // Number
+    Ident,  // Identifier
 }
 
 #[derive(PartialEq, Debug)]
@@ -51,6 +52,13 @@ pub fn tokenize(s: &String, symbols: &Vec<String>, ignore: &Vec<String>) -> VecD
             continue;
         }
 
+        if let Ok(id) = is_ident(&mut codes) {
+            tokens.push_back(
+                Token::new(TokenKind::Ident, None, id)
+            );
+            continue;
+        }
+
         if codes.len() == 0 {
             break;
         }
@@ -60,6 +68,21 @@ pub fn tokenize(s: &String, symbols: &Vec<String>, ignore: &Vec<String>) -> VecD
     }
 
     return tokens;
+}
+
+
+fn is_ident(chars: &mut VecDeque<char>) -> Result<String, LoadError> {
+    if chars.len() == 0 {
+        return Err(LoadError{});
+    }
+
+    if chars[0].is_ascii_lowercase() {
+        let c = chars[0];
+        chars.pop_front();
+        return Ok(c.to_string());
+    }
+
+    return Err(LoadError{})
 }
 
 

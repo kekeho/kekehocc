@@ -9,13 +9,16 @@ mod gen;
 use gen::Node;
 
 // Syntax
-// expr       = equality
+// program    = stmt*
+// stmt       = expr ";"
+// expr       = assign
+// assign     = equality ("=" assign)?
 // equality   = relational ("==" relational | "!=" relational)*
 // relational = add ("<" add | "<=" add | ">" add | ">=" add)*
 // add        = mul ("+" mul | "-" mul)*
 // mul        = unary ("*" unary | "/" unary)*
 // unary      = ("+" | "-")? primary
-// primary    = num | "(" expr ")"
+// primary    = num | ident | "(" expr ")"
 
 
 
@@ -30,17 +33,31 @@ fn main() {
     let symbols: Vec<String> = [
         "+", "-", "*", "/", "(", ")",
         "==", "!=", "<", "<=", ">", ">=",
+        "=", ";",
     ].iter().map(|x| x.to_string()).collect();
 
     let mut tokens: VecDeque<Token> = tokenize(&argv[1], &symbols, &ignore);
 
+    // Header
     println!(".intel_syntax noprefix");
     println!(".globl main");
+
     println!("main:");
 
-    let node: Rc<Node> = gen::expr(&mut tokens); 
-    Node::gen(&node);
+    // Prologue
+    println!("\tpush rbp");
+    println!("\tmov rbp, rsp");
+    println!("\tsub rsp, 208");
 
-    println!("\tpop rax");
+    let node: Vec<Rc<Node>> = gen::program(&mut tokens); 
+
+    for n in node {
+        Node::gen(&n);
+        println!("\tpop rax");
+    }
+
+    // Epilogue
+    println!("\tmov rsp, rbp");
+    println!("\tpop rbp");
     println!("\tret");
 }

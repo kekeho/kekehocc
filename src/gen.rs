@@ -16,6 +16,7 @@ pub enum NodeKind {
     Lt,
     Lte,
     Assign,
+    Return,
     LocalVar {offset: usize},
     Num {value: i64},
 }
@@ -51,6 +52,15 @@ impl Node {
                 println!("\tpop rax");
                 println!("\tmov [rax], rdi");
                 println!("\tpush rdi");
+                return;
+            }
+
+            NodeKind::Return => {
+                Self::gen(&n.lhs.clone().unwrap());
+                println!("\tpop rax");
+                println!("\tmov rsp, rbp");
+                println!("\tpop rbp");
+                println!("\tret");
                 return;
             }
 
@@ -137,6 +147,16 @@ fn consume(tokens: &mut VecDeque<Token>, s: &str) -> bool {
 }
 
 
+fn consume_type(tokens: &mut VecDeque<Token>, kind: TokenKind) -> bool {
+    if tokens.len() > 0 && tokens[0].kind == kind {
+        tokens.pop_front();
+        return true;
+    }
+
+    return false;
+}
+
+
 fn consume_ident(tokens: &mut VecDeque<Token>) -> Option<Token> {
     if tokens.len() > 0 && tokens[0].kind == TokenKind::Ident {
         return tokens.pop_front();
@@ -163,8 +183,19 @@ pub fn program(tokens: &mut VecDeque<Token>) -> (Vec<Rc<Node>>, usize) {
 
 
 fn stmt(tokens: &mut VecDeque<Token>, local_vars: &mut HashMap<String, usize>) -> Rc<Node> {
-    let n: Rc<Node> = expr(tokens, local_vars);
-    consume(tokens, ";");
+    let n: Rc<Node> = if consume_type(tokens, TokenKind::Return) {
+        Rc::new(Node {
+            kind: NodeKind::Return,
+            lhs: Some(expr(tokens, local_vars)),
+            rhs: None,
+        })
+    } else {
+        expr(tokens, local_vars)
+    };
+
+    if !consume(tokens, ";") {
+        panic!("Failed to parse");
+    }
     return n;
 }
 

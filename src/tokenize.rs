@@ -7,6 +7,7 @@ pub enum TokenKind {
     Reserved,  // Symbol
     Num,  // Number
     Ident,  // Identifier
+    Return,  // Return
 }
 
 #[derive(PartialEq, Debug)]
@@ -48,6 +49,13 @@ pub fn tokenize(s: &String, symbols: &Vec<String>, ignore: &Vec<String>) -> VecD
         if let Ok(n) = is_digit(&mut codes) {
             tokens.push_back(
                 Token::new(TokenKind::Num, Some(n), "".to_string())
+            );
+            continue;
+        }
+
+        if let Ok(_) = is_return(&mut codes) {
+            tokens.push_back(
+                Token::new(TokenKind::Return, None, "".to_string())
             );
             continue;
         }
@@ -136,6 +144,31 @@ fn is_digit(chars: &mut VecDeque<char>) -> Result<i64, std::num::ParseIntError> 
     return prev_result;
 }
 
+
+fn is_return(chars: &mut VecDeque<char>) -> Result<(), LoadError> {
+    const RETURN_LEN: usize = 6;
+    if chars.len() < RETURN_LEN {
+        return Err(LoadError{});
+    }
+    let mut result: Result<(), LoadError> = Err(LoadError{});
+    for i in 0..chars.len() {
+        let check: String = chars.range(0..i).collect();
+        if check == "return " {
+            result = Ok(());
+        }
+    }
+
+    match &result {
+        Ok(_) => {
+            for _ in 0..RETURN_LEN {
+                chars.pop_front();
+            }
+        }
+        _ => {}
+    }
+
+    return result;
+}
 
 
 fn load_symbol(chars: &mut VecDeque<char>, symbols: &Vec<String>) -> Result<String, LoadError> {
